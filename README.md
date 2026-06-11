@@ -2,13 +2,14 @@
 
 测量访问 Claude 模型的首个 Token 响应时间（TTFT, Time To First Token）的基准测试脚本。
 
-**TTFT** = 从发出请求到收到第一个有效内容增量（`text` / `thinking`）的耗时。脚本通过流式接口逐事件读取，记录第一个 content delta 到达的时刻，并额外统计整体完成时间与输出 token 数。
+**TTFT** = 从发出请求到收到第一个有效内容增量的耗时。脚本通过流式接口逐事件读取，默认记录第一个 `text_delta` 或 `thinking_delta` 到达的时刻，并额外统计整体完成时间与输出 token 数。可通过 `--ttft-mode text` 改为仅按正文 `text_delta` 计算。
 
 ## 特性
 
 - 基于流式 API 精确测量首 token 时间
 - 支持预热（warmup）+ 多轮正式测量，输出 min/max/mean/median/p90/p95/p99/stdev 统计
 - 支持 adaptive thinking 与推理努力程度（`low` / `medium` / `high`）
+- 支持选择 TTFT 触发口径：`any`（正文或思考增量）/ `text`（仅正文增量）
 - 默认禁用缓存（为每次请求注入唯一 nonce 绕过 prompt 缓存），保证测量不被缓存命中干扰
 - 支持自定义 `base_url`（用于代理 / 网关）
 - 支持从 JSON 配置文件读取参数，并可将结果写入 JSON 文件
@@ -46,6 +47,9 @@ python ttft_benchmark.py --allow-cache
 
 # 将每轮模型生成的正文写入 out/ 目录（每轮一个文件）
 python ttft_benchmark.py --output-dir out
+
+# 仅以最终答案正文的首个 text_delta 计算 TTFT
+python ttft_benchmark.py --ttft-mode text
 ```
 
 ## 参数
@@ -59,6 +63,7 @@ python ttft_benchmark.py --output-dir out
 | `--warmup` | 预热轮数（不计入统计） | `1` |
 | `--max-tokens` | `max_tokens`（TTFT 主要看首 token，小值即可） | `128` |
 | `--thinking` | 启用 adaptive thinking | `false` |
+| `--ttft-mode` | TTFT 触发口径：`any` 表示 `text_delta` / `thinking_delta` 均可触发，`text` 表示仅 `text_delta` | `any` |
 | `--base-url` | 自定义 API base_url（代理 / 网关时使用） | — |
 | `--json` | 将结果写入 JSON 文件 | — |
 | `--no-cache` / `--allow-cache` | 是否注入 nonce 绕过 prompt 缓存 | `--no-cache` |
@@ -74,7 +79,9 @@ python ttft_benchmark.py --output-dir out
 
 `ttft_config.json` 是可提交的模板（`api_key` 留空）。请勿将真实密钥写入此文件；改用环境变量、`--api-key`，或本地副本 `ttft_config.json.local`（已被 `.gitignore` 忽略）。
 
-支持的键与命令行参数同名：`model`、`prompt`、`runs`、`warmup`、`max_tokens`、`thinking`、`base_url`、`json_out`（或别名 `json`）、`no_cache`、`api_key`、`effort`、`output_dir`。
+支持的键与命令行参数同名：`model`、`prompt`、`runs`、`warmup`、`max_tokens`、`thinking`、`base_url`、`json_out`（或别名 `json`）、`no_cache`、`api_key`、`effort`、`output_dir`、`ttft_mode`。
+
+`ttft_mode` 支持两个取值：`any` 表示首个 `text_delta` 或 `thinking_delta` 都可触发 TTFT；`text` 表示只统计最终答案正文的首个 `text_delta`，更适合衡量用户看到正文的等待时间。
 
 ## 输出
 

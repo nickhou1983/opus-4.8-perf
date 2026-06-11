@@ -13,6 +13,7 @@ TTFT = 从发出请求到收到第一个有效内容增量 (text / thinking) 的
     python ttft_benchmark.py --config ttft_config.json   # 从配置文件读取参数
     python ttft_benchmark.py --allow-cache               # 允许缓存（默认是 --no-cache）
     python ttft_benchmark.py --output-dir out            # 将模型输出正文写入 out/ 目录
+    python ttft_benchmark.py --ttft-mode text            # 仅以正文 text_delta 计算 TTFT
 
 参数优先级: 命令行参数 > 配置文件(--config) > 内置默认值
 API 密钥优先级: --api-key > 环境变量 ANTHROPIC_API_KEY > 配置文件 api_key
@@ -45,7 +46,8 @@ class RunResult:
 def measure_once(client, index: int, model: str, prompt: str,
                  max_tokens: int, use_thinking: bool,
                  no_cache: bool = True, effort: str | None = None,
-                 output_dir: str | None = None) -> RunResult:
+                 output_dir: str | None = None,
+                 ttft_mode: str = "any") -> RunResult:
     """执行一次流式请求并测量 TTFT。
 
     no_cache=True 时为每次请求注入唯一 nonce，使 prompt 内容唯一，
@@ -53,6 +55,8 @@ def measure_once(client, index: int, model: str, prompt: str,
     脚本始终不附加 cache_control 块，因此不会主动写入缓存。
     effort 设置推理努力程度（如 low/medium/high），注入 thinking 配置。
     output_dir 不为空时，将本次生成的正文（text）写入该目录下的独立文件。
+    ttft_mode="any" 时首个 text_delta/thinking_delta 均算 TTFT；
+    ttft_mode="text" 时仅 text_delta 算 TTFT。
     """
     content = prompt
     if no_cache:
@@ -75,6 +79,7 @@ def measure_once(client, index: int, model: str, prompt: str,
     ttft: float | None = None
     output_tokens: int | None = None
     text_parts: list[str] = []  # 累积模型生成的正文增量
+    ttft_delta_types = ("text_delta",) if ttft_mode == "text" else ("text_delta", "thinking_delta")
 
     try:
         # 使用底层 messages.create(stream=True) 原始事件迭代，
@@ -85,8 +90,7 @@ def measure_once(client, index: int, model: str, prompt: str,
             if etype == "content_block_delta":
                 delta = getattr(event, "delta", None)
                 delta_type = getattr(delta, "type", None)
-                # 第一个文本或思考增量即视为“首个 token”
-                if delta_type in ("text_delta", "thinking_delta") and ttft is None:
+                if delta_type in ttft_delta_types and ttft is None:
                     ttft = time.perf_counter() - start
                 # 仅累积正文（text）；thinking 在 Opus 4.8 上默认不返回内容
                 if delta_type == "text_delta":
@@ -164,6 +168,7 @@ DEFAULTS: dict = {
     "api_key": None,
     "effort": None,
     "output_dir": None,
+    "ttft_mode": "any",
 }
 
 
@@ -207,6 +212,9 @@ def main() -> int:
                         help="推理努力程度（需配合 --thinking 使用）")
     parser.add_argument("--output-dir", dest="output_dir", default=None,
                         help="将每轮模型生成的正文写入该目录（每轮一个文件）")
+    parser.add_argument("--ttft-mode", dest="ttft_mode", default=None,
+                        choices=["any", "text"],
+                        help="TTFT 触发口径：any=text_delta/thinking_delta，text=仅 text_delta")
     args = parser.parse_args()
 
     # 合并配置: 内置默认值 -> 配置文件 -> 命令行
@@ -224,6 +232,10 @@ def main() -> int:
         cli_val = getattr(args, key, None)
         if cli_val is not None:
             cfg[key] = cli_val
+
+    if cfg["ttft_mode"] not in ("any", "text"):
+        print("ttft_mode 只能是 'any' 或 'text'。", file=sys.stderr)
+        return 2
 
     try:
         from anthropic import Anthropic
@@ -245,13 +257,15 @@ def main() -> int:
 
     print(f"模型: {cfg['model']} | runs={cfg['runs']} | warmup={cfg['warmup']} | "
           f"max_tokens={cfg['max_tokens']} | thinking={cfg['thinking']} | "
-          f"effort={cfg['effort']} | no_cache={cfg['no_cache']}")
+            f"effort={cfg['effort']} | no_cache={cfg['no_cache']} | "
+            f"ttft_mode={cfg['ttft_mode']}")
     print(f"prompt: {cfg['prompt']!r}\n")
 
     # 预热
     for w in range(cfg["warmup"]):
         r = measure_once(client, -1, cfg["model"], cfg["prompt"], cfg["max_tokens"],
-                         cfg["thinking"], cfg["no_cache"], cfg["effort"], cfg["output_dir"])
+                         cfg["thinking"], cfg["no_cache"], cfg["effort"],
+                         cfg["output_dir"], cfg["ttft_mode"])
         status = "ok" if r.ok else f"FAIL ({r.error})"
         ttft = f"{r.ttft_s:.4f}s" if r.ttft_s is not None else "—"
         print(f"  [warmup {w + 1}/{cfg['warmup']}] TTFT={ttft} {status}")
@@ -259,7 +273,8 @@ def main() -> int:
     results: list[RunResult] = []
     for i in range(cfg["runs"]):
         r = measure_once(client, i, cfg["model"], cfg["prompt"], cfg["max_tokens"],
-                         cfg["thinking"], cfg["no_cache"], cfg["effort"], cfg["output_dir"])
+                         cfg["thinking"], cfg["no_cache"], cfg["effort"],
+                         cfg["output_dir"], cfg["ttft_mode"])
         results.append(r)
         if r.ok:
             print(f"  [run {i + 1}/{cfg['runs']}] TTFT={r.ttft_s:.4f}s  "
@@ -296,6 +311,7 @@ def main() -> int:
                 "no_cache": cfg["no_cache"],
                 "effort": cfg["effort"],
                 "output_dir": cfg["output_dir"],
+                "ttft_mode": cfg["ttft_mode"],
             },
             "runs": [asdict(r) for r in results],
             "summary_ttft_s": summary_ttft,
