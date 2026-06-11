@@ -1,0 +1,6 @@
+# 包含 API 密钥的配置文件，避免误提交
+ttft_config.json.local
+# 测量结果输出
+ttft_result.json
+__pycache__/
+*.pyc
