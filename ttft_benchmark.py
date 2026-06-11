@@ -12,6 +12,7 @@ TTFT = 从发出请求到收到第一个有效内容增量 (text / thinking) 的
     python ttft_benchmark.py --warmup 1 --runs 20 --json result.json
     python ttft_benchmark.py --config ttft_config.json   # 从配置文件读取参数
     python ttft_benchmark.py --allow-cache               # 允许缓存（默认是 --no-cache）
+    python ttft_benchmark.py --output-dir out            # 将模型输出正文写入 out/ 目录
 
 参数优先级: 命令行参数 > 配置文件(--config) > 内置默认值
 API 密钥优先级: --api-key > 环境变量 ANTHROPIC_API_KEY > 配置文件 api_key
@@ -43,13 +44,15 @@ class RunResult:
 
 def measure_once(client, index: int, model: str, prompt: str,
                  max_tokens: int, use_thinking: bool,
-                 no_cache: bool = True, effort: str | None = None) -> RunResult:
+                 no_cache: bool = True, effort: str | None = None,
+                 output_dir: str | None = None) -> RunResult:
     """执行一次流式请求并测量 TTFT。
 
     no_cache=True 时为每次请求注入唯一 nonce，使 prompt 内容唯一，
     从而绕过服务端 prompt 缓存（prompt cache），保证 TTFT 测量不被缓存命中干扰。
     脚本始终不附加 cache_control 块，因此不会主动写入缓存。
     effort 设置推理努力程度（如 low/medium/high），注入 thinking 配置。
+    output_dir 不为空时，将本次生成的正文（text）写入该目录下的独立文件。
     """
     content = prompt
     if no_cache:
@@ -71,6 +74,7 @@ def measure_once(client, index: int, model: str, prompt: str,
     start = time.perf_counter()
     ttft: float | None = None
     output_tokens: int | None = None
+    text_parts: list[str] = []  # 累积模型生成的正文增量
 
     try:
         # 使用底层 messages.create(stream=True) 原始事件迭代，
@@ -79,10 +83,16 @@ def measure_once(client, index: int, model: str, prompt: str,
         for event in stream:
             etype = getattr(event, "type", None)
             if etype == "content_block_delta":
-                delta_type = getattr(getattr(event, "delta", None), "type", None)
+                delta = getattr(event, "delta", None)
+                delta_type = getattr(delta, "type", None)
                 # 第一个文本或思考增量即视为“首个 token”
                 if delta_type in ("text_delta", "thinking_delta") and ttft is None:
                     ttft = time.perf_counter() - start
+                # 仅累积正文（text）；thinking 在 Opus 4.8 上默认不返回内容
+                if delta_type == "text_delta":
+                    txt = getattr(delta, "text", None)
+                    if txt:
+                        text_parts.append(txt)
             elif etype == "message_delta":
                 usage = getattr(event, "usage", None)
                 if usage and getattr(usage, "output_tokens", None) is not None:
@@ -93,10 +103,25 @@ def measure_once(client, index: int, model: str, prompt: str,
                         getattr(msg.usage, "output_tokens", None) is not None:
                     output_tokens = msg.usage.output_tokens
         total = time.perf_counter() - start
+        if output_dir:
+            _write_output(output_dir, index, "".join(text_parts))
         return RunResult(index, ttft, total, output_tokens, ok=True)
     except Exception as exc:  # noqa: BLE001 - 基准测试需捕获所有错误并记录
         total = time.perf_counter() - start
+        if output_dir and text_parts:
+            _write_output(output_dir, index, "".join(text_parts))
         return RunResult(index, None, total, None, ok=False, error=f"{type(exc).__name__}: {exc}")
+
+
+def _write_output(output_dir: str, index: int, text: str) -> None:
+    """将单次运行的模型正文写入 output_dir 下的独立文件。
+
+    index == -1 表示预热轮，文件名标记为 warmup。
+    """
+    os.makedirs(output_dir, exist_ok=True)
+    name = "warmup.txt" if index < 0 else f"run_{index + 1:03d}.txt"
+    with open(os.path.join(output_dir, name), "w", encoding="utf-8") as f:
+        f.write(text)
 
 
 def summarize(values: list[float]) -> dict | None:
@@ -138,6 +163,7 @@ DEFAULTS: dict = {
     "no_cache": True,
     "api_key": None,
     "effort": None,
+    "output_dir": None,
 }
 
 
@@ -179,6 +205,8 @@ def main() -> int:
     parser.add_argument("--effort", dest="effort", default=None,
                         choices=["low", "medium", "high"],
                         help="推理努力程度（需配合 --thinking 使用）")
+    parser.add_argument("--output-dir", dest="output_dir", default=None,
+                        help="将每轮模型生成的正文写入该目录（每轮一个文件）")
     args = parser.parse_args()
 
     # 合并配置: 内置默认值 -> 配置文件 -> 命令行
@@ -223,7 +251,7 @@ def main() -> int:
     # 预热
     for w in range(cfg["warmup"]):
         r = measure_once(client, -1, cfg["model"], cfg["prompt"], cfg["max_tokens"],
-                         cfg["thinking"], cfg["no_cache"], cfg["effort"])
+                         cfg["thinking"], cfg["no_cache"], cfg["effort"], cfg["output_dir"])
         status = "ok" if r.ok else f"FAIL ({r.error})"
         ttft = f"{r.ttft_s:.4f}s" if r.ttft_s is not None else "—"
         print(f"  [warmup {w + 1}/{cfg['warmup']}] TTFT={ttft} {status}")
@@ -231,7 +259,7 @@ def main() -> int:
     results: list[RunResult] = []
     for i in range(cfg["runs"]):
         r = measure_once(client, i, cfg["model"], cfg["prompt"], cfg["max_tokens"],
-                         cfg["thinking"], cfg["no_cache"], cfg["effort"])
+                         cfg["thinking"], cfg["no_cache"], cfg["effort"], cfg["output_dir"])
         results.append(r)
         if r.ok:
             print(f"  [run {i + 1}/{cfg['runs']}] TTFT={r.ttft_s:.4f}s  "
@@ -252,6 +280,8 @@ def main() -> int:
     else:
         print("  无成功样本，无法统计 TTFT。")
     print(f"\n成功率: {success}/{cfg['runs']}")
+    if cfg["output_dir"]:
+        print(f"模型输出正文已写入目录: {cfg['output_dir']}")
 
     if cfg["json_out"]:
         payload = {
@@ -265,6 +295,7 @@ def main() -> int:
                 "base_url": cfg["base_url"],
                 "no_cache": cfg["no_cache"],
                 "effort": cfg["effort"],
+                "output_dir": cfg["output_dir"],
             },
             "runs": [asdict(r) for r in results],
             "summary_ttft_s": summary_ttft,

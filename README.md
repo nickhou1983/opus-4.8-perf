@@ -12,6 +12,7 @@
 - 默认禁用缓存（为每次请求注入唯一 nonce 绕过 prompt 缓存），保证测量不被缓存命中干扰
 - 支持自定义 `base_url`（用于代理 / 网关）
 - 支持从 JSON 配置文件读取参数，并可将结果写入 JSON 文件
+- 支持将每轮模型生成的正文写入独立文件（`--output-dir`），便于检查实际输出
 
 ## 安装
 
@@ -42,6 +43,9 @@ python ttft_benchmark.py --config ttft_config.json
 
 # 允许缓存（默认是 --no-cache）
 python ttft_benchmark.py --allow-cache
+
+# 将每轮模型生成的正文写入 out/ 目录（每轮一个文件）
+python ttft_benchmark.py --output-dir out
 ```
 
 ## 参数
@@ -60,6 +64,7 @@ python ttft_benchmark.py --allow-cache
 | `--no-cache` / `--allow-cache` | 是否注入 nonce 绕过 prompt 缓存 | `--no-cache` |
 | `--api-key` | API 密钥 | — |
 | `--effort` | 推理努力程度（需配合 `--thinking`） | — |
+| `--output-dir` | 将每轮模型生成的正文写入该目录（每轮一个文件） | — |
 
 **参数优先级**：命令行参数 > 配置文件（`--config`）> 内置默认值
 
@@ -69,8 +74,10 @@ python ttft_benchmark.py --allow-cache
 
 `ttft_config.json` 是可提交的模板（`api_key` 留空）。请勿将真实密钥写入此文件；改用环境变量、`--api-key`，或本地副本 `ttft_config.json.local`（已被 `.gitignore` 忽略）。
 
-支持的键与命令行参数同名：`model`、`prompt`、`runs`、`warmup`、`max_tokens`、`thinking`、`base_url`、`json_out`（或别名 `json`）、`no_cache`、`api_key`、`effort`。
+支持的键与命令行参数同名：`model`、`prompt`、`runs`、`warmup`、`max_tokens`、`thinking`、`base_url`、`json_out`（或别名 `json`）、`no_cache`、`api_key`、`effort`、`output_dir`。
 
 ## 输出
 
 脚本会在控制台打印每轮 TTFT、总耗时与输出 token 数，并汇总统计与成功率。若指定 `--json` 或配置中的 `json_out`，结果将写入对应 JSON 文件（如 `ttft_result.json`），包含完整配置、逐轮结果、TTFT 与总耗时统计及成功率。
+
+若指定 `--output-dir` 或配置中的 `output_dir`，每轮模型生成的正文将写入该目录下的独立文件：正式轮为 `run_001.txt`、`run_002.txt`……，预热轮为 `warmup.txt`。注意仅写入正文（`text`），思考内容在 Opus 4.8 上默认不返回。`out/`、`out_*/` 目录已被 `.gitignore` 忽略。

@@ -2,5 +2,8 @@
 ttft_config.json.local
 # 测量结果输出
 ttft_result.json
+# 模型输出正文目录（--output-dir）
+out_*/
+out/
 __pycache__/
 *.pyc
