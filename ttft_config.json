@@ -9,5 +9,6 @@
   "json_out": "ttft_result.json",
   "no_cache": true,
   "api_key": "",
-  "effort": "high"
+  "effort": "medium",
+  "output_dir": "out"
 }
