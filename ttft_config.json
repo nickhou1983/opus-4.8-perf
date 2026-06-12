@@ -1,6 +1,6 @@
 {
   "model": "claude-opus-4.8",
-  "prompt": "你是一个严格的自动化测试语料生成与基准测试专家。请完整执行以下多阶段任务，禁止省略任何步骤，禁止提前结束，禁止简化输出。\n\n任务目标\n我要压测大模型在长文本、多干扰项、强约束格式下的数据提取精度与长列表写入稳定性。你必须先构造复杂数据源，再执行多轮规则筛选，最后给出可用于程序验收的标准答案。你必须在输出前完成自检与纠错。\n\n全局硬性规则\n1. 只允许输出合法 JSON 片段与必要标题，不要输出解释性废话。\n2. 每个阶段必须输出完整结果，不允许用省略号，不允许写“略”。\n3. 数量约束必须严格满足，不能多不能少。\n4. 任一步骤失败时，必须在本次响应内自行重算并修正，不得交由用户二次提示。\n5. 输出必须包含所有指定分区，分区标题固定。\n\n数据源构造规则\n1. 生成一个长度为 1207 的 JSON 数组，命名为 dataset。\n2. 每个元素是一个对象，字段至少包括：id, name, category, score, region, channel, priority, risk_level, tags, updated_at, checksum_seed。\n3. id 必须是整数且唯一，范围 100001 到 101207。\n4. 干扰设计：category 至少 14 个高相似类别；name 包含高相似前后缀；score 大量接近 879 到 891；tags 至少 3 个且组合高度重复。\n5. 在 1207 个元素中插入 150 个目标候选元素，分散在头部、中部、尾部，不允许连续大段聚集。\n6. 目标候选元素至少满足以下特征中的任意两个：category=Target-150；score=888或889；tags 含 benchmark-anchor；priority=P0；risk_level=high。\n7. updated_at 覆盖至少 9 个不同日期。\n\n提取任务规则\n从 150 个目标候选中按复合规则精确选 50 个：\n1. 必须满足 category=Target-150 且 tags 包含 benchmark-anchor。\n2. 且满足 score=888，或 score=889 且 priority=P0。\n3. updated_at 晚于 2026-01-15。\n4. 排序：score 降序，再 updated_at 升序，再 id 升序。\n5. 只保留前 50 个，数量严格为 50。\n\n多轮自校验要求\n输出前必须给出：\nA. dataset 长度=1207\nB. 目标候选数量=150\nC. 最终目标数量=50\nD. 最终 50 个 id 唯一\nE. 全部满足复合规则\nF. validation_token：50 个 id 逗号连接后的长度与末尾 8 位摘要\n\n输出格式（按顺序）\nPart 1: Prompt Template（完整模板 + 完整 dataset）\nPart 2: Ground Truth（150 候选 id + 50 最终 id）\nPart 3: Final Target Objects（50 个完整对象）\nPart 4: Validation Report（A-F + validation_token + 三项统计）\n\n关键执行要求\n1. 不能跳过任何 Part。\n2. 不能输出不完整 JSON。\n3. 如果数量不匹配，必须自动重算直到匹配。\n4. 输出需可被 Python json.loads 逐段解析",
+  "prompt": "你好，帮我冒泡排序",
   "runs": 1,
   "warmup": 0,
   "max_tokens": 1000000,
@@ -9,7 +9,7 @@
   "json_out": "ttft_result.json",
   "no_cache": true,
   "api_key": "",
-  "effort": "medium",
+  "effort": "high",
   "output_dir": "out",
   "ttft_mode": "text"
 }
