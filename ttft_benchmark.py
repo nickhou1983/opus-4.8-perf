@@ -277,8 +277,10 @@ def main() -> int:
                          cfg["output_dir"], cfg["ttft_mode"])
         results.append(r)
         if r.ok:
-            print(f"  [run {i + 1}/{cfg['runs']}] TTFT={r.ttft_s:.4f}s  "
-                  f"total={r.total_s:.4f}s  out_tokens={r.output_tokens}")
+            ttft_str = f"{r.ttft_s:.4f}s" if r.ttft_s is not None else "—"
+            total_str = f"{r.total_s:.4f}s" if r.total_s is not None else "—"
+            print(f"  [run {i + 1}/{cfg['runs']}] TTFT={ttft_str}  "
+                  f"total={total_str}  out_tokens={r.output_tokens}")
         else:
             print(f"  [run {i + 1}/{cfg['runs']}] FAILED: {r.error}")
 
