@@ -1,0 +1,64 @@
+{
+  "config": {
+    "model": "claude-opus-4.8",
+    "prompt": "你好，帮我冒泡排序",
+    "runs": 3,
+    "warmup": 0,
+    "max_tokens": 1000000,
+    "thinking": true,
+    "base_url": "http://localhost:4141",
+    "no_cache": true,
+    "effort": "high",
+    "output_dir": "out",
+    "ttft_mode": "text"
+  },
+  "runs": [
+    {
+      "index": 0,
+      "ttft_s": 8.68203537503723,
+      "total_s": 9.91300241695717,
+      "output_tokens": 0,
+      "ok": true,
+      "error": null
+    },
+    {
+      "index": 1,
+      "ttft_s": 4.542507249978371,
+      "total_s": 7.587298332946375,
+      "output_tokens": 0,
+      "ok": true,
+      "error": null
+    },
+    {
+      "index": 2,
+      "ttft_s": 4.88506637501996,
+      "total_s": 7.881985999993049,
+      "output_tokens": 0,
+      "ok": true,
+      "error": null
+    }
+  ],
+  "summary_ttft_s": {
+    "count": 3,
+    "min_s": 4.5425,
+    "max_s": 8.682,
+    "mean_s": 6.0365,
+    "median_s": 4.8851,
+    "p90_s": 7.9226,
+    "p95_s": 8.3023,
+    "p99_s": 8.6061,
+    "stdev_s": 1.8759
+  },
+  "summary_total_s": {
+    "count": 3,
+    "min_s": 7.5873,
+    "max_s": 9.913,
+    "mean_s": 8.4608,
+    "median_s": 7.882,
+    "p90_s": 9.5068,
+    "p95_s": 9.7099,
+    "p99_s": 9.8724,
+    "stdev_s": 1.0339
+  },
+  "success_rate": "3/3"
+}
